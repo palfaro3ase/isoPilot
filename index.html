@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+  
+  <style>
+    body { 
+      font-family: 'Roboto', sans-serif; 
+      background-color: #f4f7f6; 
+    }
+
+    .sidebar { 
+      height: 100vh; 
+      background: #2c3e50; 
+      color: white; 
+      position: fixed; 
+    }
+
+    .nav-link { 
+      color: #bdc3c7; 
+      transition: 0.3s; 
+      cursor: pointer; 
+      border-radius: 5px; 
+      margin-bottom: 5px; 
+    }
+
+    .nav-link:hover, .nav-link.active { 
+      background: #34495e; 
+      color: #fff; 
+    }
+
+    .main-content { 
+      margin-left: 16.666667%; 
+      padding: 40px; 
+    }
+
+    /* Estilos para que la tabla de logs sea legible y profesional */
+    .table-container {
+      background: #fff;
+      border-radius: 10px;
+      padding: 20px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+
+    .col-fecha { width: 10%; }
+    .col-archivo { width: 15%; }
+    .col-riesgo { width: 10%; }
+    .col-hallazgos { width: 35%; }
+    .col-reincidencia { width: 20%; }
+    .col-analista { width: 10%; }
+
+    .text-detalle {
+      font-size: 0.9rem;
+      line-height: 1.5;
+      color: #333;
+      word-break: break-word;
+      white-space: normal; /* Asegura que el texto fluya hacia abajo y no se corte */
+    }
+
+    .badge-analista {
+      background-color: #f8f9fa;
+      color: #6c757d;
+      border: 1px solid #dee2e6;
+      font-weight: 400;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container-fluid">
+    <div class="row">
+      <!-- Sidebar Navigation -->
+      <nav class="col-md-2 d-none d-md-block sidebar p-3 shadow">
+        <div class="text-center mb-4">
+          <h4 class="fw-bold text-info">ISO-PILOT <small class="text-white" style="font-size: 0.5em;">v1.0</small></h4>
+        </div>
+        <hr>
+        <ul class="nav flex-column">
+          <li class="nav-item">
+            <a class="nav-link active" onclick="loadView('dashboard')">
+              <i class="bi bi-speedometer2 me-2"></i> Dashboard
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" onclick="loadView('agente')">
+              <i class="bi bi-robot me-2"></i> Agente Auditor IA
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" onclick="loadView('maestro')">
+              <i class="bi bi-folder me-2"></i> Listado Maestro
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" onclick="loadView('logs')">
+              <i class="bi bi-clipboard-data me-2"></i> Historial de Auditorías
+            </a>
+          </li>
+        </ul>
+      </nav>
+
+      <!-- Main Content Area -->
+      <main class="col-md-10 main-content">
+        <div id="content-display">
+          <div class="text-center mt-5">
+            <div class="spinner-border text-info" role="status"></div>
+            <h3 class="mt-3">Iniciando sistema...</h3>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    let vistaActual = '';
+    let allLogs = []; // Almacén global para filtrado local
+
+    window.onload = function() {
+      console.log('✅ Aplicación iniciada');
+      loadView('dashboard');
+    };
+
+    /**
+     * Carga de Vistas Dinámicas
+     */
+    function loadView(viewName) {
+      console.log('🔄 Cargando vista:', viewName);
+      vistaActual = viewName;
+
+      // Gestionar estado activo del menú
+      document.querySelectorAll('.nav-link').forEach(link => {
+        link.classList.remove('active');
+        if (link.getAttribute('onclick')?.includes("'" + viewName + "'")) {
+          link.classList.add('active');
+        }
+      });
+
+      const display = document.getElementById('content-display');
+      display.innerHTML = `
+        <div class="text-center mt-5 animate__animated animate__fadeIn">
+          <div class="spinner-border text-info" role="status"></div>
+          <p class="mt-2 text-muted">Cargando ${viewName}...</p>
+        </div>`;
+
+      google.script.run
+        .withSuccessHandler(function(html) {
+          display.innerHTML = html;
+          
+          // Disparadores de inicialización por vista
+          if (viewName === 'agente') {
+            inicializarAgente();
+          } else if (viewName === 'dashboard') {
+            inicializarDashboard();
+          } else if (viewName === 'logs') {
+            setTimeout(cargarLogs, 100);
+          }
+        })
+        .withFailureHandler(function(err) {
+          display.innerHTML = `<div class="alert alert-danger m-3">Error al cargar vista: ${err.message}</div>`;
+        })
+        .include(viewName);
+    }
+
+    /**
+     * Lógica de Historial (Logs)
+     */
+    function cargarLogs() {
+      console.log("🚀 [Logs] Solicitando datos...");
+      const btn = document.getElementById('btnActualizar');
+      const msgStatus = document.getElementById('msgStatus');
+
+      if (!btn) return;
+
+      btn.disabled = true;
+      if (msgStatus) msgStatus.textContent = "Sincronizando registros...";
+
+      google.script.run
+        .withSuccessHandler(function(logs) {
+          btn.disabled = false;
+          if (msgStatus) msgStatus.textContent = "";
+          
+          allLogs = logs || []; // Guardar en variable global
+          renderizarTablaLogs(allLogs);
+        })
+        .withFailureHandler(function(err) {
+          btn.disabled = false;
+          console.error("Error al obtener logs:", err);
+        })
+        .obtenerLogsAuditorias();
+    }
+
+    /**
+     * Renderiza el contenido de la tabla de logs (Útil para carga y búsqueda)
+     */
+    function renderizarTablaLogs(datos) {
+      const tbody = document.getElementById('tbodyLogs');
+      const tablaLogs = document.getElementById('tablaLogs');
+      const sinLogs = document.getElementById('sinLogs');
+      const totalEl = document.getElementById('totalLogs');
+
+      if (!tbody) return;
+
+      if (datos && datos.length > 0) {
+        if (sinLogs) sinLogs.style.display = 'none';
+        if (tablaLogs) tablaLogs.style.display = 'table';
+        if (totalEl) totalEl.textContent = datos.length;
+        
+        let html = '';
+        datos.forEach(function(log) {
+          let riesgo = log.riesgo || 'Bajo';
+          let colorRiesgo = (riesgo === 'Alto') ? 'danger' : (riesgo === 'Medio' ? 'warning text-dark' : 'success');
+          let usuarioCorto = (log.usuario || 'Sistema').split('@')[0];
+          
+          let linkArchivo = log.fileId 
+            ? `<a href="https://drive.google.com/file/d/${log.fileId}/view" target="_blank" class="text-primary text-decoration-none fw-bold">
+                 <i class="bi bi-file-earmark-pdf"></i> ${log.nombre}
+               </a>`
+            : `<span class="text-muted">${log.nombre || '—'}</span>`;
+
+          html += `
+            <tr>
+              <td class="col-fecha small text-muted">${log.fecha || ''}</td>
+              <td class="col-archivo">${linkArchivo}</td>
+              <td class="col-riesgo text-center">
+                <span class="badge bg-${colorRiesgo} w-100">${riesgo}</span>
+              </td>
+              <td class="col-hallazgos">
+                <div class="text-detalle">${log.hallazgos || ''}</div>
+              </td>
+              <td class="col-reincidencia">
+                <div class="text-detalle text-muted italic">${log.reincidencias || 'Sin observaciones'}</div>
+              </td>
+              <td class="col-analista text-center">
+                <span class="badge badge-analista px-2 py-1">
+                  <i class="bi bi-person me-1"></i>${usuarioCorto}
+                </span>
+              </td>
+            </tr>`;
+        });
+        tbody.innerHTML = html;
+      } else {
+        tbody.innerHTML = '';
+        if (sinLogs) sinLogs.style.display = 'block';
+        if (tablaLogs) tablaLogs.style.display = 'none';
+        if (totalEl) totalEl.textContent = '0';
+      }
+    }
+
+    /**
+     * Función de búsqueda global para la vista de Logs
+     */
+    window.buscarLogs = function() {
+      const input = document.getElementById('buscadorLogs');
+      if (!input) return;
+      
+      const termino = input.value.toLowerCase().trim();
+      
+      if (termino === "") {
+        renderizarTablaLogs(allLogs);
+        return;
+      }
+
+      const filtrados = allLogs.filter(log => {
+        return (
+          (log.nombre && log.nombre.toLowerCase().includes(termino)) ||
+          (log.hallazgos && log.hallazgos.toLowerCase().includes(termino)) ||
+          (log.usuario && log.usuario.toLowerCase().includes(termino)) ||
+          (log.riesgo && log.riesgo.toLowerCase().includes(termino))
+        );
+      });
+
+      renderizarTablaLogs(filtrados);
+    };
+
+    /**
+     * Lógica Agente Auditor IA
+     */
+    function inicializarAgente() {
+      const btn = document.getElementById('btnAnalizar');
+      if (btn) {
+        // Limpiar listeners previos
+        btn.replaceWith(btn.cloneNode(true));
+        document.getElementById('btnAnalizar').addEventListener('click', procesarArchivos);
+      } else {
+        setTimeout(inicializarAgente, 200);
+      }
+    }
+
+    async function procesarArchivos() {
+      const input = document.getElementById('fileInput');
+      const btn = document.getElementById('btnAnalizar');
+      const files = input?.files;
+
+      if (!files || files.length === 0) {
+        alert("Selecciona archivos para auditar.");
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Analizando...';
+      
+      const resultadosAuditoria = document.getElementById('resultadosAuditoria');
+      const statusContainer = document.getElementById('statusContainer');
+      const progressBar = document.getElementById('progressBar');
+      const porcentajeText = document.getElementById('porcentajeText');
+      const statusText = document.getElementById('statusText');
+
+      if (resultadosAuditoria) resultadosAuditoria.innerHTML = '';
+      if (statusContainer) statusContainer.classList.remove('d-none');
+
+      let procesados = 0;
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (statusText) statusText.innerText = `Auditando: ${file.name}...`;
+
+        try {
+          const fileData = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve({ 
+              base64: e.target.result.split(',')[1], 
+              type: file.type, 
+              name: file.name 
+            });
+            reader.readAsDataURL(file);
+          });
+
+          const res = await new Promise((resolve) => {
+            google.script.run
+              .withSuccessHandler(resolve)
+              .withFailureHandler(() => resolve({success: false, error: 'Error de servidor'}))
+              .procesarAuditoria(fileData);
+          });
+
+          if (res?.success) {
+            renderizarCardResultado(file.name, res.data);
+          } else {
+            renderizarCardError(file.name, res?.error);
+          }
+
+          procesados++;
+          let pct = Math.round((procesados / files.length) * 100);
+          if (progressBar) progressBar.style.width = pct + '%';
+          if (porcentajeText) porcentajeText.innerText = pct + '%';
+          
+          //if (i < files.length - 1) await new Promise(r => setTimeout(r, 1500));
+
+        } catch (e) {
+          renderizarCardError(file.name, e.message);
+        }
+      }
+
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-search"></i> Analizar';
+      if (statusText) statusText.innerText = '✅ Análisis finalizado';
+    }
+
+    function renderizarCardResultado(fileName, data) {
+      const cont = document.getElementById('resultadosAuditoria');
+      const riesgo = data.riesgo || 'Medio';
+      const color = riesgo === 'Alto' ? 'danger' : (riesgo === 'Bajo' ? 'success' : 'warning');
+      
+      cont.innerHTML += `
+        <div class="card mb-3 border-0 shadow-sm animate__animated animate__fadeInUp">
+          <div class="card-body border-start border-4 border-${color}">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <h6 class="fw-bold mb-0"><i class="bi bi-file-check me-2"></i>${fileName}</h6>
+              <span class="badge bg-${color}">${riesgo}</span>
+            </div>
+            <p class="small mb-1 text-dark"><strong>Hallazgos:</strong> ${data.hallazgos}</p>
+            <p class="small mb-0 text-muted"><strong>Reincidencias:</strong> ${data.reincidencias}</p>
+          </div>
+        </div>`;
+    }
+
+    function renderizarCardError(fileName, err) {
+      const cont = document.getElementById('resultadosAuditoria');
+      cont.innerHTML += `
+        <div class="alert alert-danger small py-2 shadow-sm">
+          <i class="bi bi-exclamation-triangle me-2"></i><strong>${fileName}:</strong> ${err}
+        </div>`;
+    }
+
+    /**
+     * Lógica de Dashboard
+     */
+    function inicializarDashboard() {
+      google.script.run
+        .withSuccessHandler(function(m) {
+          if (m) {
+            if (document.getElementById('num-docs')) document.getElementById('num-docs').innerText = m.docs;
+            if (document.getElementById('num-auditorias')) document.getElementById('num-auditorias').innerText = m.auditorias;
+            if (document.getElementById('num-nc')) document.getElementById('num-nc').innerText = m.nc;
+          }
+        })
+        .getMetricasDashboard();
+    }
+  </script>
+</body>
+</html>

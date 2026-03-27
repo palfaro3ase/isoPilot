@@ -1,0 +1,524 @@
+<!-- LOGS.HTML - Versión Completa con Búsqueda Funcional -->
+<div class="animate__animated animate__fadeIn">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h2 class="mb-0">📋 Historial de Auditorías</h2>
+      <p class="text-muted small mb-0">Registro de análisis realizados recientemente</p>
+    </div>
+    <button id="btnActualizar" class="btn btn-outline-primary btn-sm" onclick="cargarLogs()">
+      <i class="bi bi-arrow-clockwise"></i> Actualizar
+    </button>
+  </div>
+
+  <!-- ✅ CONTROLES: Buscador + Paginación -->
+  <div class="card mb-3" id="controlesLogs">
+    <div class="card-body py-3">
+      <div class="row align-items-end g-3">
+        <!-- Buscador -->
+        <div class="col-lg-8 col-md-7">
+          <label class="form-label small text-muted mb-1">🔍 Buscar en todas las columnas:</label>
+          <div class="input-group">
+            <span class="input-group-text bg-white">
+              <i class="bi bi-search text-muted"></i>
+            </span>
+            <input type="text" 
+                   id="buscadorLogs" 
+                   class="form-control" 
+                   placeholder="Escribe y presiona Enter o espera 2 segundos..."
+                   onkeypress="if(event.key==='Enter'){event.preventDefault();window.buscarLogs();}">
+            <button class="btn btn-outline-primary" type="button" id="btnBuscar" onclick="window.buscarLogs()">
+              <i class="bi bi-search"></i> Buscar
+            </button>
+            <button class="btn btn-outline-secondary" type="button" id="btnLimpiar" onclick="window.limpiarBuscador()">
+              <i class="bi bi-x"></i>
+            </button>
+          </div>
+          <small class="text-muted mt-1 d-block" id="infoResultados" style="display:none;"></small>
+        </div>
+        
+        <!-- Items por página -->
+        <div class="col-lg-4 col-md-5">
+          <label class="form-label small text-muted mb-1">Registros por página:</label>
+          <select id="itemsPorPagina" class="form-select" onchange="window.cambiarItemsPorPagina()">
+            <option value="5">5 registros</option>
+            <option value="10" selected>10 registros</option>
+            <option value="20">20 registros</option>
+            <option value="50">50 registros</option>
+            <option value="100">100 registros</option>
+            <option value="todos">Todos</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sin datos -->
+  <div id="sinLogs">
+    <div class="alert alert-info border-0 shadow-sm">
+      <i class="bi bi-info-circle me-2"></i>
+      <strong id="msgStatus">Cargando registros...</strong>
+      <p class="mb-0 mt-2 small">Los análisis realizados aparecerán aquí automáticamente.</p>
+    </div>
+  </div>
+
+  <!-- Tabla -->
+  <div id="tablaLogs" style="display:none;">
+    <div class="card shadow-sm border-0">
+      <div class="card-body p-0">
+        <div class="table-responsive" style="max-height: 650px; overflow-x: auto; overflow-y: auto;">
+          <table class="table table-hover table-striped mb-0" style="width: 100%;">
+            <thead class="table-light sticky-top" style="z-index: 10; background-color: #f8f9fa;">
+              <tr>
+                <th style="min-width: 130px;">Fecha</th>
+                <th style="min-width: 250px;">Archivo</th>
+                <th style="min-width: 100px; text-align: center;">Riesgo</th>
+                <th style="min-width: 400px;">Hallazgos</th>
+                <th style="min-width: 300px;">Reincidencias</th>
+                <th style="min-width: 150px; text-align: center;">Analista</th>
+              </tr>
+            </thead>
+            <tbody id="tbodyLogs">
+              <!-- Se llena dinámicamente -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Paginación -->
+    <div class="d-flex justify-content-between align-items-center mt-3 p-2 bg-light rounded">
+      <small class="text-muted" id="infoPagina">Página 1 de 1</small>
+      <nav>
+        <ul class="pagination pagination-sm mb-0" id="paginacion">
+          <!-- Se genera dinámicamente -->
+        </ul>
+      </nav>
+    </div>
+  </div>
+</div>
+
+<!-- ✅ SCRIPT COMPLETO CON TODAS LAS FUNCIONES -->
+<script>
+// ============================================
+// VARIABLES GLOBALES
+// ============================================
+var allLogs = [];
+var filteredLogs = [];
+var currentPage = 1;
+var itemsPerPage = 10;
+var temporizadorBusqueda = null;
+
+// ============================================
+// CARGAR LOGS INICIALES
+// ============================================
+window.cargarLogs = function() {
+  console.log('🔄 [LOGS] Cargando...');
+  
+  var btn = document.getElementById('btnActualizar');
+  if (btn) btn.disabled = true;
+  
+  // Mostrar estado de carga
+  document.getElementById('controlesLogs').style.display = 'none';
+  document.getElementById('tablaLogs').style.display = 'none';
+  document.getElementById('sinLogs').style.display = 'block';
+  document.getElementById('msgStatus').textContent = 'Cargando registros...';
+  
+  google.script.run
+    .withSuccessHandler(function(logs) {
+      console.log('✅ [LOGS] Recibidos:', logs ? logs.length : 0);
+      
+      // Guardar logs
+      allLogs = logs || [];
+      filteredLogs = allLogs.slice();
+      currentPage = 1;
+      
+      // Si hay datos, mostrar tabla
+      if (logs && logs.length > 0) {
+        document.getElementById('controlesLogs').style.display = 'block';
+        document.getElementById('tablaLogs').style.display = 'block';
+        document.getElementById('sinLogs').style.display = 'none';
+        renderizarTabla();
+      } else {
+        // Sin datos
+        document.getElementById('sinLogs').style.display = 'block';
+        document.getElementById('msgStatus').textContent = 'Sin auditorías registradas';
+      }
+      
+      if (btn) btn.disabled = false;
+    })
+    .withFailureHandler(function(err) {
+      console.error('❌ [LOGS] Error:', err);
+      document.getElementById('sinLogs').style.display = 'block';
+      document.getElementById('msgStatus').textContent = 'Error al cargar';
+      if (btn) btn.disabled = false;
+    })
+    .obtenerLogsAuditorias();
+};
+
+// ============================================
+// BUSCAR EN SERVIDOR (SERVER-SIDE SEARCH)
+// ============================================
+window.buscarLogs = function() {
+  var input = document.getElementById('buscadorLogs');
+  var texto = input ? input.value.trim() : '';
+  
+  console.log('🔍 [BUSCAR] Texto:', texto);
+  
+  // Limpiar temporizador si existe
+  if (temporizadorBusqueda) {
+    clearTimeout(temporizadorBusqueda);
+  }
+  
+  // Mostrar loading en tabla
+  var tbody = document.getElementById('tbodyLogs');
+  if (tbody) {
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4"><div class="spinner-border text-info" role="status"></div><p class="mt-2 text-muted">Buscando en ' + allLogs.length + ' registros...</p></td></tr>';
+  }
+  
+  // Llamar al servidor para buscar
+  google.script.run
+    .withSuccessHandler(function(logs) {
+      console.log('✅ [BUSCAR] Resultados:', logs ? logs.length : 0);
+      
+      // Actualizar logs filtrados
+      filteredLogs = logs || [];
+      currentPage = 1;
+      
+      // Renderizar resultados
+      renderizarTabla();
+      
+      // Mostrar info de resultados
+      var infoEl = document.getElementById('infoResultados');
+      if (infoEl) {
+        if (logs && logs.length > 0) {
+          infoEl.style.display = 'block';
+          infoEl.innerHTML = '✅ ' + logs.length + ' resultado' + (logs.length !== 1 ? 's' : '') + ' encontrado' + (logs.length !== 1 ? 's' : '');
+        } else {
+          infoEl.style.display = 'none';
+        }
+      }
+    })
+    .withFailureHandler(function(err) {
+      console.error('❌ [BUSCAR] Error:', err);
+      alert('Error al buscar: ' + (err.message || err));
+      // Restaurar vista original en caso de error
+      filteredLogs = allLogs.slice();
+      renderizarTabla();
+    })
+    .buscarLogsAuditorias(texto);
+};
+
+// ============================================
+// TEMPORIZADOR PARA BÚSQUEDA AUTOMÁTICA
+// ============================================
+window.iniciarTemporizadorBusqueda = function() {
+  if (temporizadorBusqueda) {
+    clearTimeout(temporizadorBusqueda);
+  }
+  // Buscar automáticamente después de 2 segundos sin escribir
+  temporizadorBusqueda = setTimeout(function() {
+    console.log('⏱️ Búsqueda automática');
+    window.buscarLogs();
+  }, 2000);
+};
+
+// ============================================
+// LIMPIAR BÚSQUEDA
+// ============================================
+window.limpiarBuscador = function() {
+  var input = document.getElementById('buscadorLogs');
+  if (input) {
+    input.value = '';
+    filteredLogs = allLogs.slice();
+    currentPage = 1;
+    renderizarTabla();
+    
+    var infoEl = document.getElementById('infoResultados');
+    if (infoEl) infoEl.style.display = 'none';
+    
+    input.focus();
+  }
+};
+
+// ============================================
+// CAMBIAR ITEMS POR PÁGINA
+// ============================================
+window.cambiarItemsPorPagina = function() {
+  var select = document.getElementById('itemsPorPagina');
+  var val = select ? select.value : '10';
+  
+  if (val === 'todos') {
+    itemsPerPage = filteredLogs.length > 0 ? filteredLogs.length : 100;
+  } else {
+    itemsPerPage = parseInt(val) || 10;
+  }
+  
+  currentPage = 1;
+  renderizarTabla();
+};
+
+// ============================================
+// RENDERIZAR TABLA CON PAGINACIÓN
+// ============================================
+function renderizarTabla() {
+  var tbody = document.getElementById('tbodyLogs');
+  if (!tbody) return;
+  
+  // Limpiar tbody
+  tbody.innerHTML = '';
+  
+  // Si no hay resultados
+  if (filteredLogs.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted"><i class="bi bi-search me-2"></i>No se encontraron resultados</td></tr>';
+    document.getElementById('infoPagina').textContent = 'Sin resultados';
+    document.getElementById('paginacion').innerHTML = '';
+    return;
+  }
+  
+  // Calcular índices de paginación
+  var start = (currentPage - 1) * itemsPerPage;
+  var end = Math.min(start + itemsPerPage, filteredLogs.length);
+  var pageLogs = filteredLogs.slice(start, end);
+  
+  // Renderizar cada log
+  pageLogs.forEach(function(log) {
+    var row = tbody.insertRow();
+    
+    // Determinar color del badge de riesgo
+    var riesgoColor = 'secondary';
+    if (log.riesgo === 'Alto') {
+      riesgoColor = 'danger';
+    } else if (log.riesgo === 'Medio') {
+      riesgoColor = 'warning text-dark';
+    } else if (log.riesgo === 'Bajo') {
+      riesgoColor = 'success';
+    }
+    
+    // Crear link al archivo en Drive si tiene fileId
+    var archivoLink = '';
+    if (log.fileId && log.fileId.toString().trim() !== '') {
+      archivoLink = '<a href="https://drive.google.com/file/d/' + log.fileId + '/view" target="_blank" class="text-decoration-none fw-bold text-primary" title="Abrir en Drive">' + 
+                   '<i class="bi bi-file-earmark-text me-1"></i>' + log.nombre + '</a>';
+    } else {
+      archivoLink = '<span class="text-muted">' + log.nombre + '</span>';
+    }
+    
+    // Truncar hallazgos si es muy largo
+    var hallazgosCortos = '';
+    if (log.hallazgos && log.hallazgos.length > 150) {
+      hallazgosCortos = log.hallazgos.substring(0, 150) + '...';
+    } else {
+      hallazgosCortos = log.hallazgos || 'Sin hallazgos';
+    }
+    
+    // Truncar reincidencias
+    var reincCortas = '';
+    if (log.reincidencias && log.reincidencias.length > 100) {
+      reincCortas = log.reincidencias.substring(0, 100) + '...';
+    } else {
+      reincCortas = log.reincidencias || 'Ninguna';
+    }
+    
+    // Formatear usuario (solo nombre antes del @)
+    var usuarioCorto = '';
+    if (log.usuario && log.usuario.toString().includes('@')) {
+      usuarioCorto = log.usuario.split('@')[0];
+    } else {
+      usuarioCorto = log.usuario || 'N/A';
+    }
+    
+    // Construir fila completa
+    row.innerHTML = 
+      '<td><small class="text-muted">' + (log.fecha || 'N/A') + '</small></td>' +
+      '<td>' + archivoLink + '</td>' +
+      '<td class="text-center"><span class="badge bg-' + riesgoColor + '">' + (log.riesgo || 'Medio') + '</span></td>' +
+      '<td><small class="text-detalle">' + hallazgosCortos + '</small></td>' +
+      '<td><small class="text-muted">' + (reincCortas === 'Ninguna' ? '—' : reincCortas) + '</small></td>' +
+      '<td class="text-center"><small class="text-muted badge-analista">' + usuarioCorto + '</small></td>';
+  });
+  
+  // Actualizar info de página
+  var infoPaginaEl = document.getElementById('infoPagina');
+  if (infoPaginaEl) {
+    infoPaginaEl.textContent = 'Mostrando ' + (start+1) + '-' + end + ' de ' + filteredLogs.length + ' registros';
+  }
+  
+  // Generar controles de paginación
+  generarPaginacion(Math.ceil(filteredLogs.length / itemsPerPage));
+  
+  // Asegurar que la tabla esté visible
+  document.getElementById('tablaLogs').style.display = 'block';
+  document.getElementById('controlesLogs').style.display = 'block';
+}
+
+// ============================================
+// GENERAR CONTROLES DE PAGINACIÓN
+// ============================================
+function generarPaginacion(totalPages) {
+  var paginacion = document.getElementById('paginacion');
+  if (!paginacion) return;
+  
+  // Limpiar paginación anterior
+  paginacion.innerHTML = '';
+  
+  // Si solo hay una página, no mostrar controles
+  if (totalPages <= 1) return;
+  
+  // Botón "Anterior"
+  var liPrev = document.createElement('li');
+  liPrev.className = 'page-item' + (currentPage === 1 ? ' disabled' : '');
+  liPrev.innerHTML = '<a class="page-link" href="#" onclick="event.preventDefault(); if(' + currentPage + '>1){currentPage--;renderizarTabla();}">« Ant</a>';
+  paginacion.appendChild(liPrev);
+  
+  // Números de página (máximo 5 botones visibles)
+  var maxBotones = 5;
+  var inicioPag = Math.max(1, currentPage - Math.floor(maxBotones / 2));
+  var finPag = Math.min(totalPages, inicioPag + maxBotones - 1);
+  
+  // Primer página si no está en el rango visible
+  if (inicioPag > 1) {
+    var liFirst = document.createElement('li');
+    liFirst.className = 'page-item';
+    liFirst.innerHTML = '<a class="page-link" href="#" onclick="event.preventDefault();currentPage=1;renderizarTabla();">1</a>';
+    paginacion.appendChild(liFirst);
+    
+    if (inicioPag > 2) {
+      var liEllipsis1 = document.createElement('li');
+      liEllipsis1.className = 'page-item disabled';
+      liEllipsis1.innerHTML = '<span class="page-link">...</span>';
+      paginacion.appendChild(liEllipsis1);
+    }
+  }
+  
+  // Números visibles
+  for (var p = inicioPag; p <= finPag; p++) {
+    var li = document.createElement('li');
+    li.className = 'page-item' + (p === currentPage ? ' active' : '');
+    li.innerHTML = '<a class="page-link" href="#" onclick="event.preventDefault();currentPage=' + p + ';renderizarTabla();">' + p + '</a>';
+    paginacion.appendChild(li);
+  }
+  
+  // Última página si no está en el rango visible
+  if (finPag < totalPages) {
+    if (finPag < totalPages - 1) {
+      var liEllipsis2 = document.createElement('li');
+      liEllipsis2.className = 'page-item disabled';
+      liEllipsis2.innerHTML = '<span class="page-link">...</span>';
+      paginacion.appendChild(liEllipsis2);
+    }
+    
+    var liLast = document.createElement('li');
+    liLast.className = 'page-item';
+    liLast.innerHTML = '<a class="page-link" href="#" onclick="event.preventDefault();currentPage=' + totalPages + ';renderizarTabla();">' + totalPages + '</a>';
+    paginacion.appendChild(liLast);
+  }
+  
+  // Botón "Siguiente"
+  var liNext = document.createElement('li');
+  liNext.className = 'page-item' + (currentPage === totalPages ? ' disabled' : '');
+  liNext.innerHTML = '<a class="page-link" href="#" onclick="event.preventDefault(); if(' + currentPage + '<' + totalPages + '){currentPage++;renderizarTabla();}">Sig »</a>';
+  paginacion.appendChild(liNext);
+}
+
+// ============================================
+// CONFIGURAR EVENT LISTENERS
+// ============================================
+function configurarEventListeners() {
+  console.log('🔧 [EVENTS] Configurando listeners...');
+  
+  // Buscador - Input con temporizador
+  var buscador = document.getElementById('buscadorLogs');
+  if (buscador) {
+    // Búsqueda automática al escribir (con delay)
+    buscador.addEventListener('input', function() {
+      if (temporizadorBusqueda) {
+        clearTimeout(temporizadorBusqueda);
+      }
+      temporizadorBusqueda = setTimeout(window.buscarLogs, 2000);
+    });
+    
+    // Búsqueda al presionar Enter
+    buscador.addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (temporizadorBusqueda) {
+          clearTimeout(temporizadorBusqueda);
+        }
+        window.buscarLogs();
+      }
+    });
+    console.log('✅ [EVENTS] Buscador configurado');
+  }
+  
+  // Botón Buscar
+  var btnBuscar = document.getElementById('btnBuscar');
+  if (btnBuscar) {
+    btnBuscar.addEventListener('click', function() {
+      if (temporizadorBusqueda) {
+        clearTimeout(temporizadorBusqueda);
+      }
+      window.buscarLogs();
+    });
+    console.log('✅ [EVENTS] Botón Buscar configurado');
+  }
+  
+  // Botón Limpiar
+  var btnLimpiar = document.getElementById('btnLimpiar');
+  if (btnLimpiar) {
+    btnLimpiar.addEventListener('click', window.limpiarBuscador);
+    console.log('✅ [EVENTS] Botón Limpiar configurado');
+  }
+  
+  // Select items por página
+  var select = document.getElementById('itemsPorPagina');
+  if (select) {
+    select.addEventListener('change', window.cambiarItemsPorPagina);
+    console.log('✅ [EVENTS] Select configurado');
+  }
+}
+
+// ============================================
+// INICIALIZAR AL CARGAR LA VISTA
+// ============================================
+(function() {
+  console.log('📋 [Logs] Script cargado');
+  
+  // Esperar a que el DOM esté listo
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function() {
+      setTimeout(inicializarLogs, 300);
+    });
+  } else {
+    setTimeout(inicializarLogs, 300);
+  }
+  
+  function inicializarLogs() {
+    console.log('🔧 [INIT] Inicializando vista de logs...');
+    
+    // Configurar event listeners
+    configurarEventListeners();
+    
+    // Cargar logs iniciales
+    window.cargarLogs();
+    
+    // Observer para detectar cambios en tbody (cuando lleguen los datos)
+    if (typeof MutationObserver !== 'undefined') {
+      var observer = new MutationObserver(function(mutations) {
+        var tbody = document.getElementById('tbodyLogs');
+        if (tbody && tbody.rows.length > 0 && allLogs.length === 0) {
+          console.log('👁️ [OBSERVER] Datos detectados en tbody');
+          setTimeout(function() {
+            window.cargarLogs();
+          }, 200);
+        }
+      });
+      
+      var tbody = document.getElementById('tbodyLogs');
+      if (tbody) {
+        observer.observe(tbody, { childList: true });
+        console.log('👁️ [OBSERVER] Observando cambios en tbody');
+      }
+    }
+  }
+})();
+</script>

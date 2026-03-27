@@ -1,0 +1,148 @@
+<div class="animate__animated animate__fadeIn">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>Listado Maestro de Documentos</h2>
+    <button class="btn btn-outline-primary btn-sm" onclick="cargarDocumentos()">
+      🔄 Actualizar
+    </button>
+  </div>
+  
+  <!-- Loading -->
+  <div id="loadingDocs">
+    <div class="text-center py-5">
+      <div class="spinner-border text-info" role="status"></div>
+      <p class="mt-2 text-muted">Cargando documentos...</p>
+    </div>
+  </div>
+  
+  <!-- Sin documentos -->
+  <div id="sinDocumentos" class="alert alert-warning d-none">
+    <i class="bi bi-info-circle me-2"></i>
+    <strong>No hay documentos registrados</strong>
+    <p class="mb-0 mt-2 small">
+      Agrega documentos a la hoja <code>LISTADO_MAESTRO</code> en Google Sheets.
+    </p>
+  </div>
+  
+  <!-- Error -->
+  <div id="errorMsg" class="alert alert-danger d-none">
+    <i class="bi bi-exclamation-triangle me-2"></i>
+    <strong>Error al cargar</strong>
+    <p class="mb-0 mt-2 small" id="errorText"></p>
+  </div>
+  
+  <!-- Tabla -->
+  <div id="tablaDocumentos" class="d-none">
+    <div class="alert alert-success">
+      <i class="bi bi-check-circle me-2"></i>
+      <strong id="totalDocs">0</strong> documentos
+    </div>
+    <div class="table-responsive bg-white p-3 shadow-sm rounded">
+      <table class="table table-hover">
+        <thead class="table-light">
+          <tr>
+            <th>Código</th>
+            <th>Nombre</th>
+            <th>Versión</th>
+            <th>Estado</th>
+          </tr>
+        </thead>
+        <tbody id="tbodyDocumentos"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+var cargaIniciada = false;
+var timeoutId;
+
+window.cargarDocumentos = function() {
+  if (cargaIniciada) {
+    console.log('⚠️ Carga ya en progreso');
+    return;
+  }
+  
+  cargaIniciada = true;
+  console.log('🔄 [MAESTRO] Iniciando carga...');
+  
+  // Resetear UI
+  document.getElementById('loadingDocs').style.display = 'block';
+  document.getElementById('sinDocumentos').classList.add('d-none');
+  document.getElementById('errorMsg').classList.add('d-none');
+  document.getElementById('tablaDocumentos').classList.add('d-none');
+  
+  // TIMEOUT AGRESIVO: 2 segundos máximo
+  timeoutId = setTimeout(function() {
+    console.error('⏱️ TIMEOUT: Forzando fin después de 2 segundos');
+    forzarFinCarga('Tiempo de espera agotado');
+  }, 2000);
+  
+  // Intentar llamar al servidor
+  try {
+    if (typeof google !== 'undefined' && google.script) {
+      google.script.run
+        .withSuccessHandler(function(documentos) {
+          console.log('✅ [MAESTRO] Success:', documentos);
+          clearTimeout(timeoutId);
+          procesarDocumentos(documentos);
+          cargaIniciada = false;
+        })
+        .withFailureHandler(function(err) {
+          console.error('❌ [MAESTRO] Failure:', err);
+          clearTimeout(timeoutId);
+          forzarFinCarga(err ? err.message : 'Error desconocido');
+          cargaIniciada = false;
+        })
+        .obtenerDocumentosMaestro();
+      
+      console.log('📡 [MAESTRO] Llamada enviada al servidor');
+    } else {
+      throw new Error('google.script.run no disponible');
+    }
+  } catch (e) {
+    console.error('❌ [MAESTRO] Excepción:', e);
+    clearTimeout(timeoutId);
+    forzarFinCarga('Error: ' + e.message);
+    cargaIniciada = false;
+  }
+};
+
+function forzarFinCarga(mensaje) {
+  console.warn('⚠️ [MAESTRO] Mostrando mensaje:', mensaje);
+  document.getElementById('loadingDocs').style.display = 'none';
+  document.getElementById('sinDocumentos').classList.remove('d-none');
+  document.getElementById('errorText').textContent = mensaje;
+}
+
+function procesarDocumentos(documentos) {
+  document.getElementById('loadingDocs').style.display = 'none';
+  
+  if (!documentos || documentos.length === 0) {
+    console.log('⚠️ [MAESTRO] Sin documentos');
+    document.getElementById('sinDocumentos').classList.remove('d-none');
+    return;
+  }
+  
+  console.log('🟢 [MAESTRO] Renderizando', documentos.length, 'documentos');
+  document.getElementById('tablaDocumentos').classList.remove('d-none');
+  document.getElementById('totalDocs').textContent = documentos.length;
+  
+  var tbody = document.getElementById('tbodyDocumentos');
+  tbody.innerHTML = '';
+  
+  documentos.forEach(function(doc) {
+    var row = tbody.insertRow();
+    row.innerHTML = 
+      '<td><code>' + (doc.codigo || 'N/A') + '</code></td>' +
+      '<td>' + (doc.nombre || 'Sin nombre') + '</td>' +
+      '<td><span class="badge bg-secondary">' + (doc.version || '1.0') + '</span></td>' +
+      '<td><span class="text-success">● ' + (doc.estado || 'Vigente') + '</span></td>';
+  });
+}
+
+// Cargar automáticamente
+setTimeout(function() {
+  console.log('⏱️ [MAESTRO] Auto-carga iniciada');
+  cargarDocumentos();
+}, 100);
+</script>
