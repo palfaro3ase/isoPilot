@@ -1,148 +1,138 @@
 <div class="animate__animated animate__fadeIn">
+  <!-- Cabecera -->
   <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2>Listado Maestro de Documentos</h2>
-    <button class="btn btn-outline-primary btn-sm" onclick="cargarDocumentos()">
-      🔄 Actualizar
-    </button>
-  </div>
-  
-  <!-- Loading -->
-  <div id="loadingDocs">
-    <div class="text-center py-5">
-      <div class="spinner-border text-info" role="status"></div>
-      <p class="mt-2 text-muted">Cargando documentos...</p>
+    <div>
+      <h2 class="mb-0">📂 Listado Maestro</h2>
+      <p class="text-muted small mb-0">Gestión de documentos oficiales del sistema</p>
+    </div>
+    <div class="d-flex gap-2">
+      <button class="btn btn-success btn-sm shadow-sm" onclick="window.abrirModalMaestro()">
+        <i class="bi bi-plus-circle me-1"></i> Nuevo Documento
+      </button>
+      <button id="btnActualizarMaestro" class="btn btn-outline-primary btn-sm shadow-sm" onclick="window.cargarMaestro()">
+        <i class="bi bi-arrow-clockwise me-1"></i> Actualizar
+      </button>
     </div>
   </div>
-  
-  <!-- Sin documentos -->
-  <div id="sinDocumentos" class="alert alert-warning d-none">
-    <i class="bi bi-info-circle me-2"></i>
-    <strong>No hay documentos registrados</strong>
-    <p class="mb-0 mt-2 small">
-      Agrega documentos a la hoja <code>LISTADO_MAESTRO</code> en Google Sheets.
-    </p>
+
+  <!-- Barra de Búsqueda y Filtros -->
+  <div class="card shadow-sm border-0 mb-3">
+    <div class="card-body py-2">
+      <div class="input-group input-group-sm">
+        <span class="input-group-text bg-white border-end-0 text-muted">
+          <i class="bi bi-search"></i>
+        </span>
+        <input type="text" id="buscarMaestro" class="form-control border-start-0 ps-0" 
+               placeholder="Buscar por código o nombre de documento..." onkeyup="filtrarMaestro()">
+      </div>
+    </div>
   </div>
-  
-  <!-- Error -->
-  <div id="errorMsg" class="alert alert-danger d-none">
-    <i class="bi bi-exclamation-triangle me-2"></i>
-    <strong>Error al cargar</strong>
-    <p class="mb-0 mt-2 small" id="errorText"></p>
+
+  <!-- Estados -->
+  <div id="sinMaestro">
+    <div class="alert alert-light border shadow-sm text-center py-5">
+      <div id="msgStatusMaestro" class="text-muted fs-5">
+        <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+        Sincronizando registros...
+      </div>
+    </div>
   </div>
-  
+
   <!-- Tabla -->
-  <div id="tablaDocumentos" class="d-none">
-    <div class="alert alert-success">
-      <i class="bi bi-check-circle me-2"></i>
-      <strong id="totalDocs">0</strong> documentos
+  <div id="tablaMaestro" style="display:none;">
+    <div class="card shadow-sm border-0">
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0" id="tablaDatosMaestro">
+            <thead class="table-light">
+              <tr>
+                <th style="width: 20%;">Código</th>
+                <th style="width: 45%;">Nombre del Documento</th>
+                <th style="width: 15%; text-align: center;">Versión</th>
+                <th style="width: 20%; text-align: right;" class="pe-3">Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="tbodyMaestro"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
-    <div class="table-responsive bg-white p-3 shadow-sm rounded">
-      <table class="table table-hover">
-        <thead class="table-light">
-          <tr>
-            <th>Código</th>
-            <th>Nombre</th>
-            <th>Versión</th>
-            <th>Estado</th>
-          </tr>
-        </thead>
-        <tbody id="tbodyDocumentos"></tbody>
-      </table>
+    <div class="mt-2 px-2">
+      <small class="text-muted" id="contadorMaestro"></small>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Nuevo Registro Maestro -->
+<div class="modal fade" id="modalNuevoDoc" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content shadow-lg border-0">
+      <div class="modal-header bg-success text-white py-3">
+        <h5 class="modal-title fs-6 fw-bold">
+          <i class="bi bi-file-earmark-medical me-2"></i>Nuevo Registro Maestro
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <form id="formNuevoMaestro">
+          <div class="mb-3">
+            <label class="form-label small fw-bold text-secondary">Código del Documento</label>
+            <input type="text" id="docCodigo" placeholder="Ej: PR-SGC-001" class="form-control form-control-sm shadow-sm">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-bold text-secondary">Nombre del Documento</label>
+            <input type="text" id="docNombre" placeholder="Nombre descriptivo del documento" class="form-control form-control-sm shadow-sm">
+          </div>
+          <div class="row mb-3">
+            <div class="col-6">
+              <label class="form-label small fw-bold text-secondary">Versión Inicial</label>
+              <input type="text" id="docVersion" value="1.0" class="form-control form-control-sm shadow-sm text-center">
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-bold text-secondary">Adjuntar Archivo (PDF, DOC, DOCX)</label>
+            <input type="file" id="docFile" class="form-control form-control-sm shadow-sm" accept=".pdf,.doc,.docx">
+            <div class="form-text x-small text-info">
+              <i class="bi bi-info-circle me-1"></i>Se guardará en 02_DOCUMENTOS_VIGENTES.
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer bg-light py-2">
+        <button type="button" class="btn btn-secondary btn-sm px-3" data-bs-dismiss="modal">Cancelar</button>
+        <button id="btnGuardarMaestro" class="btn btn-success btn-sm px-4 shadow-sm" onclick="window.guardarMaestro()">
+          <i class="bi bi-cloud-arrow-up me-1"></i> Guardar Registro
+        </button>
+      </div>
     </div>
   </div>
 </div>
 
 <script>
-var cargaIniciada = false;
-var timeoutId;
+  // Función para filtrar la tabla en tiempo real
+  function filtrarMaestro() {
+    const input = document.getElementById("buscarMaestro");
+    const filter = input.value.toLowerCase();
+    const table = document.getElementById("tablaDatosMaestro");
+    const tr = table.getElementsByTagName("tr");
+    let visibles = 0;
 
-window.cargarDocumentos = function() {
-  if (cargaIniciada) {
-    console.log('⚠️ Carga ya en progreso');
-    return;
-  }
-  
-  cargaIniciada = true;
-  console.log('🔄 [MAESTRO] Iniciando carga...');
-  
-  // Resetear UI
-  document.getElementById('loadingDocs').style.display = 'block';
-  document.getElementById('sinDocumentos').classList.add('d-none');
-  document.getElementById('errorMsg').classList.add('d-none');
-  document.getElementById('tablaDocumentos').classList.add('d-none');
-  
-  // TIMEOUT AGRESIVO: 2 segundos máximo
-  timeoutId = setTimeout(function() {
-    console.error('⏱️ TIMEOUT: Forzando fin después de 2 segundos');
-    forzarFinCarga('Tiempo de espera agotado');
-  }, 2000);
-  
-  // Intentar llamar al servidor
-  try {
-    if (typeof google !== 'undefined' && google.script) {
-      google.script.run
-        .withSuccessHandler(function(documentos) {
-          console.log('✅ [MAESTRO] Success:', documentos);
-          clearTimeout(timeoutId);
-          procesarDocumentos(documentos);
-          cargaIniciada = false;
-        })
-        .withFailureHandler(function(err) {
-          console.error('❌ [MAESTRO] Failure:', err);
-          clearTimeout(timeoutId);
-          forzarFinCarga(err ? err.message : 'Error desconocido');
-          cargaIniciada = false;
-        })
-        .obtenerDocumentosMaestro();
-      
-      console.log('📡 [MAESTRO] Llamada enviada al servidor');
-    } else {
-      throw new Error('google.script.run no disponible');
+    for (let i = 1; i < tr.length; i++) {
+      const tdCodigo = tr[i].getElementsByTagName("td")[0];
+      const tdNombre = tr[i].getElementsByTagName("td")[1];
+      if (tdCodigo || tdNombre) {
+        const txtValue = (tdCodigo.textContent || tdNombre.textContent).toLowerCase();
+        if (txtValue.indexOf(filter) > -1) {
+          tr[i].style.display = "";
+          visibles++;
+        } else {
+          tr[i].style.display = "none";
+        }
+      }
     }
-  } catch (e) {
-    console.error('❌ [MAESTRO] Excepción:', e);
-    clearTimeout(timeoutId);
-    forzarFinCarga('Error: ' + e.message);
-    cargaIniciada = false;
+    document.getElementById("contadorMaestro").innerText = `Mostrando ${visibles} registros`;
   }
-};
-
-function forzarFinCarga(mensaje) {
-  console.warn('⚠️ [MAESTRO] Mostrando mensaje:', mensaje);
-  document.getElementById('loadingDocs').style.display = 'none';
-  document.getElementById('sinDocumentos').classList.remove('d-none');
-  document.getElementById('errorText').textContent = mensaje;
-}
-
-function procesarDocumentos(documentos) {
-  document.getElementById('loadingDocs').style.display = 'none';
-  
-  if (!documentos || documentos.length === 0) {
-    console.log('⚠️ [MAESTRO] Sin documentos');
-    document.getElementById('sinDocumentos').classList.remove('d-none');
-    return;
-  }
-  
-  console.log('🟢 [MAESTRO] Renderizando', documentos.length, 'documentos');
-  document.getElementById('tablaDocumentos').classList.remove('d-none');
-  document.getElementById('totalDocs').textContent = documentos.length;
-  
-  var tbody = document.getElementById('tbodyDocumentos');
-  tbody.innerHTML = '';
-  
-  documentos.forEach(function(doc) {
-    var row = tbody.insertRow();
-    row.innerHTML = 
-      '<td><code>' + (doc.codigo || 'N/A') + '</code></td>' +
-      '<td>' + (doc.nombre || 'Sin nombre') + '</td>' +
-      '<td><span class="badge bg-secondary">' + (doc.version || '1.0') + '</span></td>' +
-      '<td><span class="text-success">● ' + (doc.estado || 'Vigente') + '</span></td>';
-  });
-}
-
-// Cargar automáticamente
-setTimeout(function() {
-  console.log('⏱️ [MAESTRO] Auto-carga iniciada');
-  cargarDocumentos();
-}, 100);
 </script>
+
+<!-- Disparador automático -->
+<img src="x" onerror="window.cargarMaestro()" style="display:none;">

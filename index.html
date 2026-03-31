@@ -2,7 +2,9 @@
 <html>
 <head>
   <base target="_top">
+  <!-- CSS DE BOOTSTRAP 5 (Añadido/Verificado aquí) -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"/>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
@@ -115,6 +117,9 @@
     </div>
   </div>
 
+  <!-- JS DE BOOTSTRAP 5 (Añadido aquí antes de tus scripts) -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
   <script>
     let vistaActual = '';
     let allLogs = []; // Almacén global para filtrado local
@@ -128,10 +133,9 @@
      * Carga de Vistas Dinámicas
      */
     function loadView(viewName) {
-      console.log('🔄 Cargando vista:', viewName);
+      console.log('🔄 Cambiando a:', viewName);
       vistaActual = viewName;
 
-      // Gestionar estado activo del menú
       document.querySelectorAll('.nav-link').forEach(link => {
         link.classList.remove('active');
         if (link.getAttribute('onclick')?.includes("'" + viewName + "'")) {
@@ -140,27 +144,27 @@
       });
 
       const display = document.getElementById('content-display');
-      display.innerHTML = `
-        <div class="text-center mt-5 animate__animated animate__fadeIn">
-          <div class="spinner-border text-info" role="status"></div>
-          <p class="mt-2 text-muted">Cargando ${viewName}...</p>
-        </div>`;
+      display.innerHTML = '<div class="text-center mt-5"><div class="spinner-border text-info"></div><p>Cargando...</p></div>';
 
       google.script.run
         .withSuccessHandler(function(html) {
           display.innerHTML = html;
           
-          // Disparadores de inicialización por vista
+          // Disparadores automáticos por vista
           if (viewName === 'agente') {
             inicializarAgente();
           } else if (viewName === 'dashboard') {
             inicializarDashboard();
           } else if (viewName === 'logs') {
-            setTimeout(cargarLogs, 100);
+            // Carga inmediata de logs
+            if (typeof cargarLogs === 'function') cargarLogs();
+          } else if (viewName === 'maestro') {
+            // Carga inmediata de documentos (sin spinners infinitos)
+            if (typeof cargarDocumentos === 'function') cargarDocumentos();
           }
         })
         .withFailureHandler(function(err) {
-          display.innerHTML = `<div class="alert alert-danger m-3">Error al cargar vista: ${err.message}</div>`;
+          display.innerHTML = '<div class="alert alert-danger">Error: ' + err.message + '</div>';
         })
         .include(viewName);
     }
@@ -389,16 +393,256 @@
      * Lógica de Dashboard
      */
     function inicializarDashboard() {
+      console.log("📊 Actualizando Dashboard...");
       google.script.run
         .withSuccessHandler(function(m) {
           if (m) {
-            if (document.getElementById('num-docs')) document.getElementById('num-docs').innerText = m.docs;
-            if (document.getElementById('num-auditorias')) document.getElementById('num-auditorias').innerText = m.auditorias;
-            if (document.getElementById('num-nc')) document.getElementById('num-nc').innerText = m.nc;
+            const docsEl = document.getElementById('num-docs');
+            const audEl = document.getElementById('num-auditorias');
+            const ncEl = document.getElementById('num-nc');
+            
+            if (docsEl) docsEl.innerText = m.docs || 0;
+            if (audEl) audEl.innerText = m.auditorias || 0;
+            if (ncEl) ncEl.innerText = m.nc || 0;
+            console.log("✅ Dashboard actualizado:", m);
           }
         })
         .getMetricasDashboard();
     }
+
+    /**
+     * Lógica de Maestro de Documentos (Registro)
+     */
+    async function registrarNuevoDocumentoMaestro() {
+      const btn = document.getElementById('btnGuardarDoc');
+      const form = document.getElementById('formNuevoDoc');
+      const fileInput = document.getElementById('docFile');
+      
+      if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Guardando...';
+
+      try {
+        let fileData = null;
+        if (fileInput.files.length > 0) {
+          const file = fileInput.files[0];
+          fileData = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve({
+              fileBase64: e.target.result.split(',')[1],
+              fileType: file.type,
+              fileName: file.name
+            });
+            reader.readAsDataURL(file);
+          });
+        }
+
+        const formData = {
+          codigo: document.getElementById('docCodigo').value,
+          nombre: document.getElementById('docNombre').value,
+          version: document.getElementById('docVersion').value,
+          ...fileData
+        };
+
+        google.script.run
+          .withSuccessHandler(function(res) {
+            btn.disabled = false;
+            btn.innerHTML = 'Guardar Documento';
+            if (res.success) {
+              alert("Documento registrado exitosamente.");
+              form.reset();
+              const modal = bootstrap.Modal.getInstance(document.getElementById('modalNuevoDoc'));
+              if (modal) modal.hide();
+              cargarDocumentos(); // Recargar la tabla
+            } else {
+              alert("Error: " + res.error);
+            }
+          })
+          .withFailureHandler(function(err) {
+            btn.disabled = false;
+            btn.innerHTML = 'Guardar Documento';
+            alert("Error de conexión: " + err.message);
+          })
+          .registrarNuevoDocumento(formData);
+
+      } catch (e) {
+        btn.disabled = false;
+        btn.innerHTML = 'Guardar Documento';
+        alert("Error procesando archivo: " + e.message);
+      }
+    }
+
+    // --- FUNCIONES GLOBALES PARA EL LISTADO MAESTRO ---
+
+    window.abrirModalMaestro = function() {
+      const modalEl = document.getElementById('modalNuevoDoc');
+      if (!modalEl) return console.error("No se encontró el modal");
+
+      try {
+        // Intento estándar con Bootstrap
+        const myModal = new bootstrap.Modal(modalEl);
+        myModal.show();
+      } catch (e) {
+        console.warn("Bootstrap no detectado, usando fallback...");
+        // Fallback: Si bootstrap falla, forzamos la visualización con CSS
+        modalEl.classList.add('show');
+        modalEl.style.display = 'block';
+        modalEl.style.backgroundColor = 'rgba(0,0,0,0.5)';
+        
+        // Cerrar manualmente si bootstrap no funciona
+        const closeBtns = modalEl.querySelectorAll('[data-bs-dismiss="modal"]');
+        closeBtns.forEach(btn => {
+          btn.onclick = () => {
+            modalEl.style.display = 'none';
+            modalEl.classList.remove('show');
+          };
+        });
+      }
+    };
+
+    window.cargarMaestro = function() {
+      console.log('📡 [MAESTRO] Buscando datos...');
+      const sinData = document.getElementById('sinMaestro');
+      const tabla = document.getElementById('tablaMaestro');
+      const statusMsg = document.getElementById('msgStatusMaestro');
+      const tbody = document.getElementById('tbodyMaestro');
+
+      if (sinData) sinData.style.display = 'block';
+      if (tabla) tabla.style.display = 'none';
+      
+      // Mensaje inicial de carga
+      if (statusMsg) {
+        statusMsg.innerHTML = '<i class="bi bi-info-circle me-2"></i>Sincronizando registros...';
+      }
+
+      google.script.run
+        .withSuccessHandler(function(documentos) {
+          const docs = documentos || [];
+          
+          if (docs.length > 0 && tbody) {
+            // SI HAY DATOS: Mostrar tabla
+            if (sinData) sinData.style.display = 'none';
+            if (tabla) tabla.style.display = 'block';
+            
+            tbody.innerHTML = docs.map(doc => `
+              <tr>
+                <td><code class="text-primary fw-bold">${doc.codigo || '—'}</code></td>
+                <td class="small fw-bold">${doc.nombre || 'Sin nombre'}</td>
+                <td class="text-center"><span class="badge bg-light text-dark border">${doc.version || '1.0'}</span></td>
+              </tr>
+            `).join('');
+          } else {
+            // SI ESTÁ VACÍA: Mostrar el mensaje que solicitaste
+            if (sinData) sinData.style.display = 'block';
+            if (tabla) tabla.style.display = 'none';
+            if (statusMsg) {
+              statusMsg.innerHTML = `
+                <div class="py-2">
+                  <i class="bi bi-exclamation-circle me-2"></i>
+                  No hay documentos registrados aún. 
+                  <button class="btn btn-link p-0 fw-bold text-decoration-none" onclick="window.abrirModalMaestro()">
+                    Registra un documento aquí.
+                  </button>
+                </div>`;
+            }
+          }
+        })
+        .withFailureHandler(function(err) {
+          if (statusMsg) statusMsg.innerHTML = '<span class="text-danger">Error al conectar con la base de datos.</span>';
+        })
+        .obtenerDocumentosMaestro();
+    };
+
+    /**
+     * Lógica de Maestro de Documentos (Registro)
+     * Corregido para incluir validación de archivos y manejo de base64
+     */
+    window.guardarMaestro = async function() {
+  const btn = document.getElementById('btnGuardarMaestro');
+  const fileInput = document.getElementById('docFile');
+  const codigo = document.getElementById('docCodigo').value;
+  const nombre = document.getElementById('docNombre').value;
+  const version = document.getElementById('docVersion').value;
+
+  // 1. Validación de campos vacíos
+  if (!codigo || !nombre || !version || fileInput.files.length === 0) {
+    alert("⚠️ Por favor, complete todos los campos y adjunte un archivo.");
+    return;
+  }
+
+  // 2. Validación de extensión de archivo
+  const file = fileInput.files[0];
+  const fileName = file.name;
+  const extension = fileName.split('.').pop().toLowerCase();
+  const permitidos = ['pdf', 'doc', 'docx'];
+
+  if (!permitidos.includes(extension)) {
+    alert("❌ Error: Solo se permiten archivos PDF, DOC o DOCX.");
+    return;
+  }
+
+  // Bloquear botón y mostrar carga
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Procesando...';
+
+  try {
+    // 3. Leer archivo y convertir a Base64
+    const reader = new FileReader();
+    const fileBase64 = await new Promise((resolve, reject) => {
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = error => reject(error);
+      reader.readAsDataURL(file);
+    });
+
+    const payload = {
+      codigo: codigo,
+      nombre: nombre,
+      version: version,
+      archivo: {
+        base64: fileBase64,
+        mimeType: file.type,
+        nombre: fileName
+      }
+    };
+
+    // 4. Llamada al servidor (Asegúrate que el nombre coincida en Código.gs)
+    google.script.run
+      .withSuccessHandler(function(res) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-check-circle me-1"></i> Guardar Registro';
+        
+        if (res.success) {
+          alert("✅ Registro guardado y archivo cargado en 02_DOCUMENTOS_VIGENTES");
+          
+          // Cerrar modal y limpiar
+          const modalEl = document.getElementById('modalNuevoDoc');
+          const instance = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+          instance.hide();
+          document.getElementById('formNuevoMaestro').reset();
+          
+          // Recargar tabla si la función existe
+          if (typeof cargarMaestro === 'function') cargarMaestro();
+        } else {
+          alert("❌ Error del servidor: " + res.error);
+        }
+      })
+      .withFailureHandler(function(err) {
+        btn.disabled = false;
+        btn.innerHTML = 'Guardar Registro';
+        alert("❌ Error crítico: " + err.message);
+      })
+      .registrarDocumentoMaestro(payload); // Este nombre DEBE existir en Código.gs
+
+  } catch (err) {
+    btn.disabled = false;
+    btn.innerHTML = 'Guardar Registro';
+    alert("❌ Error al procesar el archivo: " + err.message);
+  }
+};
   </script>
 </body>
 </html>

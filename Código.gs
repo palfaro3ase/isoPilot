@@ -435,47 +435,32 @@ function listarModelosGemini() {
   return json;
 }
 
-// ✅ AGREGA ESTO AL FINAL DE code.gs
 function obtenerDocumentosMaestro() {
-  Logger.log("🔵 [MAESTRO] Función iniciada");
-  
   try {
-    var ss = SpreadsheetApp.openById(SS_ID);
-    var sheet = ss.getSheetByName("LISTADO_MAESTRO");
+    // CAMBIO CLAVE: Usar el ID de la hoja externa
+    const ss = SpreadsheetApp.openById(SS_ID);
+    const sheet = ss.getSheetByName('LISTADO_MAESTRO');
     
-    if (!sheet) {
-      Logger.log("⚠️ [MAESTRO] Hoja no encontrada");
-      return [];
-    }
+    if (!sheet) return [];
     
-    var lastRow = sheet.getLastRow();
-    Logger.log("[MAESTRO] Last row: " + lastRow);
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return []; 
     
-    if (lastRow < 2) {
-      Logger.log("[MAESTRO] Sin datos");
-      return [];
-    }
+    // Obtenemos los datos (ajusta el número de columnas si es necesario)
+    // Según tu registro, tenemos: ID, Código, Nombre, Versión, Link, Usuario, Fecha
+    const data = sheet.getRange(2, 1, lastRow - 1, 7).getValues();
     
-    var data = sheet.getRange(2, 1, lastRow - 1, 5).getValues();
-    var documentos = [];
-    
-    data.forEach(function(row, i) {
-      if (row[2] && row[2].toString().trim() !== "") {
-        documentos.push({
-          id: row[0] || ("ID-" + (i + 1)),
-          codigo: row[1] || ("DOC-" + String(i + 1).padStart(3, '0')),
-          nombre: row[2],
-          version: row[3] || "1.0",
-          estado: row[4] || "Vigente"
-        });
-      }
-    });
-    
-    Logger.log("🟢 [MAESTRO] Documentos: " + documentos.length);
-    return documentos;
-    
+    return data.map(fila => ({
+      id: fila[0],
+      codigo: fila[1],
+      nombre: fila[2],
+      version: fila[3],
+      enlace: fila[4],
+      usuario: fila[5],
+      fecha: fila[6] instanceof Date ? Utilities.formatDate(fila[6], Session.getScriptTimeZone(), "dd/MM/yyyy") : fila[6]
+    }));
   } catch (e) {
-    Logger.log("❌ [MAESTRO] Error: " + e.toString());
+    console.error("Error en obtenerDocumentosMaestro: " + e.toString());
     return [];
   }
 }
@@ -584,4 +569,101 @@ function crearLogDesdeFila(row) {
     usuario: row[5] || "",
     riesgo: row[6] || "Medio"
   };
+}
+
+// =============================================================
+// NUEVA FUNCIÓN DE REGISTRO PARA MAESTRO (DINÁMICA)
+// =============================================================
+
+function registrarNuevoDocumento(formData) {
+  try {
+    const FOLDER_ID = getParam("ID_CARPETA_VIGENTES");
+    const ss = SpreadsheetApp.openById(SS_ID);
+    const sheet = ss.getSheetByName("LISTADO_MAESTRO");
+    
+    if (!FOLDER_ID) throw new Error("No se encontró ID_CARPETA_VIGENTES en CONFIG");
+
+    var folder = DriveApp.getFolderById(FOLDER_ID);
+    var fileId = "";
+
+    if (formData.fileBase64) {
+      var blob = Utilities.newBlob(Utilities.base64Decode(formData.fileBase64), formData.fileType, formData.fileName);
+      var file = folder.createFile(blob);
+      fileId = file.getId();
+    }
+
+    var lastRow = sheet.getLastRow();
+    var nextId = lastRow < 2 ? 1 : parseInt(sheet.getRange(lastRow, 1).getValue()) + 1;
+
+    sheet.appendRow([
+      nextId,
+      formData.codigo,
+      formData.nombre,
+      formData.version,
+      "Vigente"
+    ]);
+
+    return { success: true, message: "Documento registrado", fileId: fileId };
+  } catch (e) {
+    console.error("❌ [Maestro] Error:", e.toString());
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
+ * Registra un documento en el Listado Maestro y sube el archivo 
+ * utilizando la base de datos externa definida en SS_ID.
+ */
+function registrarDocumentoMaestro(payload) {
+  try {
+    // 1. Abrir la hoja de cálculo externa usando el ID global
+    var ss = SpreadsheetApp.openById(SS_ID);
+    
+    // 2. Obtener el ID de la carpeta dinámicamente usando tu función getParam
+    var folderIdVigentes = getParam("ID_CARPETA_VIGENTES");
+    
+    if (!folderIdVigentes) {
+      throw new Error("No se encontró el parámetro ID_CARPETA_VIGENTES en la hoja CONFIG.");
+    }
+
+    // 3. Acceder a la carpeta de Drive y crear el archivo
+    var carpeta = DriveApp.getFolderById(folderIdVigentes);
+    var blob = Utilities.newBlob(
+      Utilities.base64Decode(payload.archivo.base64), 
+      payload.archivo.mimeType, 
+      payload.archivo.nombre
+    );
+    var archivoSubido = carpeta.createFile(blob);
+    
+    // 4. Registrar los datos en la hoja LISTADO_MAESTRO de la base de datos externa
+    var sheetMaestro = ss.getSheetByName("LISTADO_MAESTRO");
+    if (!sheetMaestro) {
+      throw new Error("No se encontró la pestaña 'LISTADO_MAESTRO' en la base de datos.");
+    }
+    
+    // Obtenemos el último ID numérico para mantener la consistencia que tenías antes
+    var lastRow = sheetMaestro.getLastRow();
+    var nextId = lastRow < 2 ? 1 : (parseInt(sheetMaestro.getRange(lastRow, 1).getValue()) || lastRow) + 1;
+
+    // Insertar fila: ID, Código, Nombre, Versión, Link, Usuario, Fecha
+    sheetMaestro.appendRow([
+      nextId,                             // A: ID Correlativo
+      payload.codigo,                     // B: Código
+      payload.nombre,                     // C: Nombre
+      payload.version,                    // D: Versión
+      archivoSubido.getUrl(),             // E: Enlace al archivo (Drive)
+      Session.getActiveUser().getEmail(), // F: Usuario que registró
+      new Date()                          // G: Fecha de registro
+    ]);
+    
+    return { 
+      success: true, 
+      message: "Documento registrado con éxito", 
+      fileId: archivoSubido.getId() 
+    };
+    
+  } catch (e) {
+    console.error("❌ [registrarDocumentoMaestro] Error:", e.toString());
+    return { success: false, error: e.toString() };
+  }
 }
